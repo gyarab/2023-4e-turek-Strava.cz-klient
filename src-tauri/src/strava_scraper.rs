@@ -1,78 +1,15 @@
+use crate::data_struct::{Date, DishInfo, User};
 use crate::request_builder::RequestBuilder;
-use chrono::Datelike;
+use chrono::prelude::*;
 use fantoccini::{Client, ClientBuilder, Locator};
 use indexmap::IndexMap;
 use scraper::{Html, Selector};
-use serde::{ser::SerializeStruct, Serialize, Serializer};
 use std::time::Duration;
 use std::{
     collections::HashSet,
     process::{Child, Command},
 };
 use url::Url;
-// structure representing user
-pub struct User<'a> {
-    pub username: &'a str,
-    pub password: &'a str,
-    pub cantine: &'a str,
-    pub lang: &'a str,
-    pub stay_logged: bool,
-}
-impl Serialize for User<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut s = serializer.serialize_struct("User", 5)?;
-        s.serialize_field("heslo", &self.password)?;
-        s.serialize_field("jmeno", &self.username)?;
-        s.serialize_field("cislo", &self.cantine)?;
-        s.serialize_field("lang", &self.lang)?;
-        s.serialize_field("zustatPrihlasen", &self.stay_logged.to_string())?;
-        s.end()
-    }
-}
-// structure representing dish
-pub struct Dish<'a> {
-    pub name: &'a str,
-    pub allergens: Vec<&'a str>,
-}
-#[derive(Eq, Debug, Hash, Clone)]
-pub struct Date {
-    pub day: i8,
-    pub month: i8,
-    pub day_of_week: String,
-}
-impl PartialEq for Date {
-    fn eq(&self, other: &Self) -> bool {
-        self.day == other.day && self.month == other.month
-    }
-}
-impl PartialOrd for Date {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if self == other {
-            return Some(std::cmp::Ordering::Equal);
-        }
-        if self.month > other.month {
-            return Some(std::cmp::Ordering::Greater);
-        }
-        if self.month < other.month {
-            return Some(std::cmp::Ordering::Less);
-        }
-        Some(self.day.cmp(&other.day))
-    }
-}
-impl Ord for Date {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
-impl Date {
-    pub fn to_string(&self) -> String {
-        format!("{} {}. {}.", self.day_of_week, self.day, self.month)
-    }
-}
-
 pub struct Scraper {
     client: Client,
     gecko: Child,
@@ -145,15 +82,16 @@ impl Scraper {
             .await
         {
             Ok(_) => return Ok(()),
-            Err(_) => return Err("Při komunikaci se serverem došlo k chybě".to_string()),
+            Err(err) => return Err(err.to_string()),
         };
     }
     // parse given html to menu represented by following structure HashMap<date: String, HashMap<dish_name: String, (is_ordered: bool, allergens: HashSet<String>)>>
     pub async fn scraper_user_menu(
         &self,
         request_builder: &RequestBuilder,
-    ) -> Result<IndexMap<String, IndexMap<String, (bool, String, Vec<String>)>>, String> {
+    ) -> Result<IndexMap<Date, IndexMap<String, DishInfo>>, String> {
         let api_data = request_builder.get_user_menu().await?;
+        println!("{:?}", api_data);
         let page = self.get_menu_page().await;
         let now = chrono::Local::now();
         let mut menu = IndexMap::new();
@@ -174,11 +112,16 @@ impl Scraper {
             let daily_menu_html = Html::parse_fragment(day.html().as_str());
             let dishes_of_day = daily_menu_html.select(&dishes_selector);
             let mut daily_menu = IndexMap::new();
-            let date = daily_menu_html
-                .select(&date_selector)
-                .next()
-                .unwrap()
-                .inner_html();
+            let date = Date::new(
+                daily_menu_html
+                    .select(&date_selector)
+                    .next()
+                    .unwrap()
+                    .inner_html()
+                    .split(" ")
+                    .skip(1)
+                    .collect::<String>(),
+            );
             for dish in dishes_of_day {
                 let mut allergens = Vec::new();
                 dish.select(&allergens_selector)
@@ -193,33 +136,34 @@ impl Scraper {
                 let dish_name = dish
                     .select(&dishes_name_selector)
                     .into_iter()
-                    .map(|a| a.inner_html())
-                    .collect::<Vec<String>>()
-                    .into_iter()
-                    .collect::<String>();
+                    .map(|a| format!("{} ", a.inner_html().trim()))
+                    .filter(|a| a != " ")
+                    .collect::<String>()
+                    .trim()
+                    .to_string();
 
-                daily_menu.insert(
-                    dish_name.clone(),
-                    (
-                        ordered,
-                        api_data
-                            .get(&date)
-                            .unwrap()
-                            .get(&dish_name)
-                            .unwrap()
-                            .1
-                            .to_owned(),
-                        allergens,
-                    ),
+                match api_data.get(&date).and_then(|x| x.get(&dish_name)) {
+                    Some(info) => {
+                        daily_menu.insert(
+                            dish_name.clone(),
+                            DishInfo {
+                                id: info.id.clone(),
+                                allergens: allergens,
+                                order_state: ordered,
+                            },
+                        );
+                    }
+                    None => continue,
+                }
+                println!(
+                    "{}, {:?}",
+                    dish_name,
+                    api_data.get(&date).unwrap().get(&dish_name)
                 );
-                /* output test
-                let x =allergens.into_iter().collect::<String>();
-                println!("{:?}", dish.select(&dishes_name_selector).into_iter().map(|a| a.inner_html()).collect::<Vec<String>>().into_iter().collect::<String>());
-                println!("{}", ordered);
-                println!("{}", x);¨
-                */
             }
-            menu.insert(date, daily_menu);
+            if !daily_menu.is_empty() {
+                menu.insert(date, daily_menu);
+            }
         }
         Ok(menu)
     }
@@ -231,17 +175,7 @@ impl Scraper {
             .unwrap();
         Html::parse_document(self.client.source().await.unwrap().as_str())
     }
-    // extract and return list of allergens from given dish description
-    pub fn get_allergens(&self, dish_descriptin: String) -> HashSet<String> {
-        let mut allergens = HashSet::new();
-        // print!("{}", x);
-        for c in dish_descriptin.chars().filter(|c| c.is_digit(10)) {
-            if c != '0' {
-                allergens.insert(c.to_string());
-            }
-        }
-        allergens
-    }
+
     pub async fn close(mut self) {
         self.client.close().await.unwrap();
         self.gecko.kill().unwrap();

@@ -1,5 +1,6 @@
 use crate::request_builder::RequestBuilder;
-use crate::strava_scraper::{Scraper, User};
+use crate::strava_scraper::Scraper;
+use crate::data_struct::{User, DishInfo, Date};
 use indexmap::IndexMap;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
@@ -12,8 +13,8 @@ struct Config {
 }
 pub struct StravaClient {
     request_builder: RequestBuilder,
-    menu: OnceCell<IndexMap<String, IndexMap<String, (bool, String, Vec<String>)>>>,
-    screaper: OnceCell<Scraper>,
+    menu: OnceCell<IndexMap<Date, IndexMap<String, DishInfo>>>,
+    screaper: tokio::sync::OnceCell<Scraper>,
     settings: Config,
 }
 impl StravaClient {
@@ -21,7 +22,7 @@ impl StravaClient {
         Ok(StravaClient {
             request_builder: RequestBuilder::new(),
             menu: OnceCell::new(),
-            screaper: OnceCell::new(),
+            screaper: tokio::sync::OnceCell::new(),
             settings: match StravaClient::load_settings() {
                 Ok(settings) => settings,
                 Err(e) => return Err(e),
@@ -40,7 +41,7 @@ impl StravaClient {
     }
     pub async fn get_menu(
         &self,
-    ) -> Result<IndexMap<String, IndexMap<String, (bool, String, Vec<String>)>>, String> {
+    ) -> Result<IndexMap<Date, IndexMap<String, DishInfo>>, String> {
         match self.menu.get() {
             Some(menu) => Ok(menu.clone()),
             None => {
@@ -67,14 +68,15 @@ impl StravaClient {
     }
     pub async fn login(&self, user: &User<'_>) -> Result<(), String> {
         match self.settings.settings.get("data_source").unwrap().as_str() {
-            "api" => self.request_builder.login(&user).await?,
-            "scraper" => self.screaper.get().unwrap().login(&user).await?,
+            "api" => (),
+            "scraper" => {self.screaper.get_or_init(||Scraper::new()).await.login(&user).await?},
             _ => {
                 return Err(
                     "Chybná konfigurace způsobu získání dat v souboru config.toml".to_string(),
                 )
             }
         };
+        self.request_builder.login(&user).await?;
         Ok(())
     }
 }

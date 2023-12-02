@@ -1,8 +1,8 @@
-use crate::strava_scraper::User;
-use indexmap::IndexMap;
+use crate::data_struct::{Date, DishInfo,User};
 use once_cell::sync::OnceCell;
 use reqwest::{Client, Error, Response};
 use scraper::Html;
+use indexmap::IndexMap;
 pub struct RequestBuilder {
     client: Client,
     canteen_id: OnceCell<String>,
@@ -20,7 +20,8 @@ impl RequestBuilder {
     }
     // authenticate user and retun errors if occured
     pub async fn login(&self, user: &User<'_>) -> Result<(), String> {
-        self.do_get("https://app.strava.cz/prihlasit-se?jidelna").await;
+        self.do_get("https://app.strava.cz/prihlasit-se?jidelna")
+            .await;
         match self
             .do_post(
                 "https://app.strava.cz/api/login",
@@ -59,7 +60,7 @@ impl RequestBuilder {
     // do get request for loqged users menu page and return it
     pub async fn get_user_menu(
         &self,
-    ) -> Result<IndexMap<String, IndexMap<String, (bool, String, Vec<String>)>>, String> {
+    ) -> Result<IndexMap<Date, IndexMap<String, DishInfo>>, String> {
         match self
             .do_post_template(
                 "https://app.strava.cz/api/objednavky",
@@ -80,9 +81,9 @@ impl RequestBuilder {
                         for dish in daily_menu_json {
                             let dish_name = format!(
                                 "{} - {}",
-                                dish.get("popis").unwrap().as_str().unwrap().to_string(),
-                                dish.get("nazev").unwrap().as_str().unwrap()
-                            );
+                                dish.get("popis").unwrap().as_str().unwrap().trim().to_string(),
+                                dish.get("nazev").unwrap().as_str().unwrap().trim().to_string()
+                            ).trim().to_string();
                             let allergens: Vec<String> = dish
                                 .get("alergeny")
                                 .unwrap()
@@ -101,26 +102,27 @@ impl RequestBuilder {
                                 .collect();
                             daily_menu.insert(
                                 dish_name,
-                                (
-                                    dish.get("pocet").unwrap().as_i64().unwrap() == 1,
-                                    dish.get("veta").unwrap().as_str().unwrap().to_string(),
-                                    allergens,
-                                ),
+                                DishInfo {
+                                    order_state: dish.get("pocet").unwrap().as_i64().unwrap() == 1,
+                                    id: dish.get("veta").unwrap().as_str().unwrap().to_string(),
+                                    allergens: allergens,
+                                },
                             );
                         }
                         menu.insert(
-                            daily_menu_json
-                                .get(0)
-                                .unwrap()
-                                .get("datum")
-                                .unwrap()
-                                .as_str()
-                                .unwrap()
-                                .to_string(),
+                            Date::new(
+                                daily_menu_json
+                                    .get(0)
+                                    .unwrap()
+                                    .get("datum")
+                                    .unwrap()
+                                    .as_str()
+                                    .unwrap().to_string(),
+                            ),
                             daily_menu,
                         );
                     }
-
+                    menu.sort_keys();
                     Ok(menu)
                 }
                 Err(e) => return Err(e.to_string()),
@@ -128,6 +130,7 @@ impl RequestBuilder {
             Err(_) => return Err("Došlo k chybě při odesílání požadavku".to_string()),
         }
     }
+   
     pub async fn do_post(&self, url: &str, body: String) -> Result<Response, Error> {
         self.client.post(url).body(body).send().await
     }
