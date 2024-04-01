@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+	.dark-mode-autofill {
+		&:-webkit-autofill,
+		&:-webkit-autofill:hover,
+		&:-webkit-autofill:focus,
+		&:-webkit-autofill:active {
+			-webkit-text-fill-color: white;
+			-webkit-box-shadow: 0 0 0px 1000px rgb(30 41 59 / var(--tw-bg-opacity)) inset;
+			color: white;
+		}
+	}
+}
+.remove-scrollbar-arrows {
+	::-webkit-scrollbar {
+		width: 12px;
+	}
+	
+	/* Track */
+	::-webkit-scrollbar-track {
+		-webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.3); 
+		-webkit-border-radius: 10px;
+		border-radius: 10px;
+	}
+	
+	/* Handle */
+	::-webkit-scrollbar-thumb {
+		-webkit-border-radius: 10px;
+		border-radius: 10px;
+		background: rgba(255,0,0,0.8); 
+		-webkit-box-shadow: inset 0 0 6px rgba(0,0,0,0.5); 
+	}
+}
+.menu-item {
+	height: 30px;
+}
+.non-expand {
+	--tw-ring-inset: 0;
+	--tw-ring-offset-width: 0px;
+	--tw-ring-offset-color: none;
+	--tw-ring-color: none;
+	--tw-ring-offset-shadow: none;
+	--tw-ring-shadow: none;
+	box-shadow: none !important;
+}
