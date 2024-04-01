@@ -1,8 +1,8 @@
 FROM node:alpine AS build
 
-COPY ./src/ /app/src/
-COPY ./static/ /app/static/
-COPY ["./package.json", "./vite.config.ts", "tsconfig.json", "tailwind.config.ts","svelte.config.js","postcss.config.cjs","/app/" ] 
+COPY ./frontend/src/ /app/src/
+COPY ./frontend/static/ /app/static/
+COPY ["./frontend/package.json", "./frontend/vite.config.ts", "./frontend/tsconfig.json", "./frontend/tailwind.config.ts","./frontend/svelte.config.js","./frontend/postcss.config.cjs","/app/" ]
 
 WORKDIR /app/
 
