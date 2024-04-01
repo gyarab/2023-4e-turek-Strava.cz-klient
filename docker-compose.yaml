@@ -31,7 +31,7 @@ services:
   frontend:
     image: frontend                            #
     build:                                     #   replace this with image: turekjakub/strava_client:frontend to use the image from dockerhub instead of building it from repo
-     context: ./frontend                       #
+     context: .                                #
      dockerfile: ./frontend/Dockerfile         #
     restart: unless-stopped
     labels:
